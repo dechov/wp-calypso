@@ -4,73 +4,27 @@
 import React from 'react';
 import { connect } from 'react-redux';
 import emailValidator from 'email-validator';
-import request from 'superagent';
 
 /**
  * Internal dependencies
  */
-import Button from 'components/button';
-import EmptyContent from 'components/empty-content';
-
 import config from 'config';
-import debugFactory from 'debug';
-import { getCurrentUser } from 'state/current-user/selectors';
-import { getCurrentQueryArguments } from 'state/ui/selectors';
 import { localize } from 'i18n-calypso';
 
-const debug = debugFactory( 'calypso:magic-login' );
+import {
+	fetchAuthenticate,
+	showLinkExpiredPage,
+} from 'state/login/magic-login/actions';
+import {
+	isFetchingAuth,
+	requestAuthError,
+	requestAuthSuccess,
+} from 'state/login/magic-login/selectors';
+import { getCurrentUser } from 'state/current-user/selectors';
+import { getCurrentQueryArguments } from 'state/ui/selectors';
 
-/**
- * Provide the "Magic Login" token to get logged in (or get the credentials to do so ourself)
- * @param  {object} data - object containing an email address & token
- * @param  {Function} fn - Function to invoke when request is complete
- * @returns {Promise} promise
- */
-function postToMagicLoginTokenHandler( data ) {
-	data.client_id = config( 'wpcom_signup_id' );
-	data.client_secret = config( 'wpcom_signup_key' );
-
-	return request
-		.post( 'https://wordpress.com/wp-login.php?action=magic-login' )
-		.withCredentials()
-		.send( data )
-		.set( {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-		} )
-		.end( responseHandler );
-}
-
-function responseHandler( error, response ) {
-	response = response || {};
-
-	const { status, body } = response;
-
-	if ( ! status || 400 <= status && status < 500 ) {
-		debug( 'unsuccessful status: ' + status );
-		window.location.replace( '/login/link-has-expired' );
-		return;
-	}
-
-	if ( error || ! ( body && body.data && body.success ) ) {
-		debug( 'error: ' + JSON.stringify( error ) );
-		debug( 'body: ' + JSON.stringify( body ) );
-
-		// @TODO This is most likely a server or network error, maybe show a notice instead?
-		window.location.replace( '/login/link-has-expired' );
-		return;
-	}
-
-	const { data } = body;
-	const { redirect_to } = data;
-
-	if ( redirect_to.match( /^(https:\/\/wordpress\.com|http:\/\/calypso\.localhost:3000)(\/|$)/ ) ) {
-		debug( 'redirecting: ' + redirect_to );
-		window.location.replace( redirect_to );
-	} else {
-		window.location.replace( '/' );
-	}
-}
+import Button from 'components/button';
+import EmptyContent from 'components/empty-content';
 
 class HandleEmailedLinkForm extends React.Component {
 	state = {
@@ -80,21 +34,11 @@ class HandleEmailedLinkForm extends React.Component {
 	handleSubmit = event => {
 		event.preventDefault();
 
-		debug( 'form submitted!' );
-
 		this.setState( {
 			hasSubmitted: true,
 		} );
 
-		const postData = {
-			email: this.props.emailAddress,
-			token: this.props.token,
-			tt: this.props.tokenTime,
-		};
-
-		debug( '`POST`ing credentials to WPCOM', postData );
-
-		postToMagicLoginTokenHandler( postData );
+		this.props.fetchAuthenticate( this.props.emailAddress, this.props.token, this.props.tokenTime );
 	};
 
 	componentWillMount() {
@@ -104,7 +48,7 @@ class HandleEmailedLinkForm extends React.Component {
 			return;
 		}
 
-		window.location.replace( '/login/link-has-expired' );
+		this.props.showLinkExpiredPage();
 	}
 
 	render() {
@@ -164,9 +108,17 @@ const mapState = state => {
 		currentUser: getCurrentUser( state ),
 		clientId,
 		emailAddress,
+		isFetchingAuth,
+		requestAuthError,
+		requestAuthSuccess,
 		token,
 		tokenTime,
 	};
 };
 
-export default connect( mapState )( localize( HandleEmailedLinkForm ) );
+const mapDispatch = {
+	fetchAuthenticate,
+	showLinkExpiredPage,
+};
+
+export default connect( mapState, mapDispatch )( localize( HandleEmailedLinkForm ) );
